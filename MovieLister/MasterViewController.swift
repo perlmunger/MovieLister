@@ -44,7 +44,7 @@ class MasterViewController: UITableViewController {
             do {
                 if let records = try NSJSONSerialization.JSONObjectWithData(data!, options: []) as? [String:AnyObject] {
                     self?.movies = records.movieEntries
-                    self?.movies.sortInPlace { (movie1, movie2) -> Bool in
+                    self?.movies.sortInPlace { (movie1, movie2) -> Bool in // Sort by release date
                         guard let date1 = movie1.releaseDateWithFormatter((self?.formatter)!), date2 = movie2.releaseDateWithFormatter((self?.formatter)!) else {
                             return false
                         }
