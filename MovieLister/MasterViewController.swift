@@ -11,20 +11,14 @@ import UIKit
 class MasterViewController: UITableViewController {
 
     var detailViewController: DetailViewController? = nil
-    var objects = [AnyObject]()
+    let url = NSURL(string: "https://itunes.apple.com/us/rss/topmovies/limit=50/json")
 
-
+    var movies = [[String:AnyObject]]()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Do any additional setup after loading the view, typically from a nib.
-        self.navigationItem.leftBarButtonItem = self.editButtonItem()
 
-        let addButton = UIBarButtonItem(barButtonSystemItem: .Add, target: self, action: "insertNewObject:")
-        self.navigationItem.rightBarButtonItem = addButton
-        if let split = self.splitViewController {
-            let controllers = split.viewControllers
-            self.detailViewController = (controllers[controllers.count-1] as! UINavigationController).topViewController as? DetailViewController
-        }
+        self.downloadData()
     }
 
     override func viewWillAppear(animated: Bool) {
@@ -32,63 +26,104 @@ class MasterViewController: UITableViewController {
         super.viewWillAppear(animated)
     }
 
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
+    func downloadData() {
+        
+        let task = NSURLSession.sharedSession().dataTaskWithURL(self.url!) { [weak self] (data, response, error) -> Void in
+            do {
+                if let records = try NSJSONSerialization.JSONObjectWithData(data!, options: []) as? [String:AnyObject] {
+                    self?.movies = records.movieEntries
+                    dispatch_async(dispatch_get_main_queue(), { () -> Void in
+                        self?.tableView.reloadData()
+                    })
+                }
+            } catch {
+                
+            }
+        }
+        
+        task.resume()
     }
-
-    func insertNewObject(sender: AnyObject) {
-        objects.insert(NSDate(), atIndex: 0)
-        let indexPath = NSIndexPath(forRow: 0, inSection: 0)
-        self.tableView.insertRowsAtIndexPaths([indexPath], withRowAnimation: .Automatic)
-    }
-
+    
     // MARK: - Segues
 
     override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
         if segue.identifier == "showDetail" {
-            if let indexPath = self.tableView.indexPathForSelectedRow {
-                let object = objects[indexPath.row] as! NSDate
-                let controller = (segue.destinationViewController as! UINavigationController).topViewController as! DetailViewController
-                controller.detailItem = object
-                controller.navigationItem.leftBarButtonItem = self.splitViewController?.displayModeButtonItem()
-                controller.navigationItem.leftItemsSupplementBackButton = true
-            }
+
         }
     }
 
     // MARK: - Table View
 
-    override func numberOfSectionsInTableView(tableView: UITableView) -> Int {
-        return 1
-    }
-
     override func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return objects.count
+        return movies.count
     }
+    
+    var images = [NSIndexPath:UIImage]()
 
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCellWithIdentifier("Cell", forIndexPath: indexPath)
 
-        let object = objects[indexPath.row] as! NSDate
-        cell.textLabel!.text = object.description
+        let object = self.movies[indexPath.row]
+        
+        cell.textLabel!.text = object.movieName           // Movie name property
+        cell.detailTextLabel!.text = object.movieSummary  // Movie summary property
+
+        
+        if let image = self.images[indexPath] {          // Use the cached image if it exists
+            cell.imageView?.image = image
+        } else {                                         // Otherwise download it
+            if let url = object.movieThumnailURL {       // Movie thumbnail URL property
+                let task = NSURLSession.sharedSession().dataTaskWithURL(url) { [weak self] (data, response, error) -> Void in
+                    if let data = data {
+                        if let image = UIImage(data: data) {
+                            self?.images[indexPath] = image  // Cache the image so it doesn't get re-requested
+                            dispatch_async(dispatch_get_main_queue(), { () -> Void in
+                                self?.tableView.reloadRowsAtIndexPaths([indexPath], withRowAnimation: .Automatic)
+                            })
+                        }
+                        
+                    }
+                }
+                
+                task.resume()
+                
+            }
+        }
+        
         return cell
     }
 
-    override func tableView(tableView: UITableView, canEditRowAtIndexPath indexPath: NSIndexPath) -> Bool {
-        // Return false if you do not want the specified item to be editable.
-        return true
-    }
+}
 
-    override func tableView(tableView: UITableView, commitEditingStyle editingStyle: UITableViewCellEditingStyle, forRowAtIndexPath indexPath: NSIndexPath) {
-        if editingStyle == .Delete {
-            objects.removeAtIndex(indexPath.row)
-            tableView.deleteRowsAtIndexPaths([indexPath], withRowAnimation: .Fade)
-        } else if editingStyle == .Insert {
-            // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view.
+extension Dictionary where Key : StringLiteralConvertible, Value : AnyObject {
+    
+    var movieName : String {
+        if let nameObj = self["im:name"] as? [String:AnyObject] {
+            return nameObj["label"] as! String
         }
+        return ""
     }
 
-
+    var movieSummary : String {
+        if let summary = self["summary"] as? [String:AnyObject] {
+            return summary["label"] as! String
+        }
+        return ""
+    }
+    
+    var movieThumnailURL : NSURL? {
+        if let imageItems = self["im:image"] as? [[String:AnyObject]] {
+            let firstOne = imageItems[0]["label"] as! String
+            return NSURL(string: firstOne)
+        }
+        return nil
+    }
+    
+    var movieEntries : [[String:AnyObject]] {
+        if let feed = self["feed"] as? [String:AnyObject] {
+            return feed["entry"] as! [[String:AnyObject]]
+        }
+        return []
+    }
 }
 
