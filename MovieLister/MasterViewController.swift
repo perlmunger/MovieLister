@@ -15,6 +15,18 @@ class MasterViewController: UITableViewController {
 
     var movies = [[String:AnyObject]]()
     
+    lazy var formatter : NSDateFormatter = {
+       let formatter = NSDateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+        return formatter
+    }()
+    
+    lazy var prettyFormatter : NSDateFormatter = {
+        let formatter = NSDateFormatter()
+        formatter.dateStyle = NSDateFormatterStyle.ShortStyle
+        return formatter
+    }()
+    
     override func viewDidLoad() {
         super.viewDidLoad()
 
@@ -32,6 +44,12 @@ class MasterViewController: UITableViewController {
             do {
                 if let records = try NSJSONSerialization.JSONObjectWithData(data!, options: []) as? [String:AnyObject] {
                     self?.movies = records.movieEntries
+                    self?.movies.sortInPlace { (movie1, movie2) -> Bool in
+                        guard let date1 = movie1.releaseDateWithFormatter((self?.formatter)!), date2 = movie2.releaseDateWithFormatter((self?.formatter)!) else {
+                            return false
+                        }
+                        return date1.compare(date2) ==  NSComparisonResult.OrderedDescending
+                    }
                     dispatch_async(dispatch_get_main_queue(), { () -> Void in
                         self?.tableView.reloadData()
                     })
@@ -65,8 +83,9 @@ class MasterViewController: UITableViewController {
 
         let object = self.movies[indexPath.row]
         
-        cell.textLabel!.text = object.movieName           // Movie name property
-        cell.detailTextLabel!.text = object.movieSummary  // Movie summary property
+        cell.textLabel?.text = object.movieName           // Movie name property
+//        cell.detailTextLabel?.text = object.movieSummary  // Movie summary property
+        cell.detailTextLabel?.text = object.movieSummaryWithReleaseDateUsingFormatter(self.formatter, outputFormatter: self.prettyFormatter)
 
         
         if let image = self.images[indexPath] {          // Use the cached image if it exists
@@ -111,10 +130,30 @@ extension Dictionary where Key : StringLiteralConvertible, Value : AnyObject {
         return ""
     }
     
+    func movieSummaryWithReleaseDateUsingFormatter(inputFormatter:NSDateFormatter, outputFormatter:NSDateFormatter) -> String {
+        guard let releaseDate = self.releaseDateWithFormatter(inputFormatter) else {
+            return self.movieSummary
+        }
+        
+        let dateString = outputFormatter.stringFromDate(releaseDate)
+        return "Release: \(dateString) \(self.movieSummary)"
+    }
+    
     var movieThumnailURL : NSURL? {
         if let imageItems = self["im:image"] as? [[String:AnyObject]] {
             let firstOne = imageItems[0]["label"] as! String
             return NSURL(string: firstOne)
+        }
+        return nil
+    }
+    
+    func releaseDateWithFormatter(formatter:NSDateFormatter) -> NSDate? {
+        if let releaseDateObj = self["im:releaseDate"] as? [String:AnyObject] {
+            if let dateString = releaseDateObj["label"] as? String {
+                if let date = formatter.dateFromString(dateString) {
+                    return date
+                }
+            }
         }
         return nil
     }
